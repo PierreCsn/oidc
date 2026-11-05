@@ -149,10 +149,19 @@ func TestValidateTokenRequestResources(t *testing.T) {
 			wantErr:   true,
 		},
 		{
-			name:        "nothing granted accepts any valid resource",
-			requested:   []string{"https://mcp.example.com/mcp"},
-			granted:     nil,
-			wantCurrent: []string{"https://mcp.example.com/mcp"},
+			// An absent grant must not authorize an arbitrary resource: the
+			// request implements ResourceRequest, so the subset rule applies
+			// and anything outside the (empty) grant is rejected.
+			name:      "nothing granted rejects any requested resource",
+			requested: []string{"https://mcp.example.com/mcp"},
+			granted:   nil,
+			wantErr:   true,
+		},
+		{
+			name:      "explicitly empty grant rejects any requested resource",
+			requested: []string{"https://mcp.example.com/mcp"},
+			granted:   []string{},
+			wantErr:   true,
 		},
 	}
 	for _, tt := range tests {
@@ -174,6 +183,10 @@ func TestValidateTokenRequestResources(t *testing.T) {
 }
 
 func TestValidateTokenRequestResources_withoutResourceInterfaces(t *testing.T) {
+	// A request implementing neither optional interface does not use the
+	// feature: syntactically valid resources are accepted for backwards
+	// compatibility but cannot narrow anything, while invalid syntax is
+	// still rejected.
 	require.NoError(t, op.ValidateTokenRequestResources(nil, &plainRequest{}))
 	require.NoError(t, op.ValidateTokenRequestResources([]string{"https://mcp.example.com/mcp"}, &plainRequest{}))
 	require.Error(t, op.ValidateTokenRequestResources([]string{"/mcp"}, &plainRequest{}))

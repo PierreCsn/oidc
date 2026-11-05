@@ -270,7 +270,7 @@ func TestValidateAuthRequest(t *testing.T) {
 				Resource:     []string{"https://mcp.example.com/mcp#fragment"},
 			}, mock.NewMockStorageExpectValidClientID(t), nil},
 			oidc.ErrInvalidTarget().WithDescription(
-				"The resource parameter %q must not include a fragment component.",
+				"resource parameter %q must not include a fragment component",
 				"https://mcp.example.com/mcp#fragment",
 			),
 		},
