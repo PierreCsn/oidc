@@ -48,3 +48,46 @@ func TestAuthCodeRefreshKeepsFullResourceGrant(t *testing.T) {
 	require.NoError(t, op.ValidateTokenRequestResources([]string{api}, refreshReq),
 		"refresh to another originally granted resource must be accepted")
 }
+
+// TestRefreshNarrowingPreservesStoredGrant is a regression test for F04:
+// narrowing a refresh request to a subset selects that subset for the new
+// access token, but must not rewrite the persisted refresh token grant, so
+// rotation preserves the full grant and later refreshes may target any
+// originally granted resource.
+func TestRefreshNarrowingPreservesStoredGrant(t *testing.T) {
+	const (
+		mcp = "https://mcp.example.com/mcp"
+		api = "https://api.example.com"
+	)
+	ctx := context.Background()
+	store := NewStorage(NewUserStore("http://test.example.com"))
+
+	authReq := authRequestToInternal(&oidc.AuthRequest{
+		ClientID: "web",
+		Resource: []string{mcp, api},
+	}, "id1")
+	_, refreshToken, _, err := store.CreateAccessAndRefreshTokens(ctx, authReq, "")
+	require.NoError(t, err)
+
+	// first refresh narrowed down to a single resource, with rotation
+	refreshReq, err := store.TokenRequestByRefreshToken(ctx, refreshToken)
+	require.NoError(t, err)
+	require.NoError(t, op.ValidateTokenRequestResources([]string{mcp}, refreshReq))
+	accessTokenID, rotatedRefreshToken, _, err := store.CreateAccessAndRefreshTokens(ctx, refreshReq, refreshToken)
+	require.NoError(t, err)
+
+	accessToken, ok := store.tokens[accessTokenID]
+	require.True(t, ok, "access token must be stored")
+	assert.Equal(t, []string{mcp}, accessToken.Resource, "access token is issued for the narrowed subset")
+
+	rotated, ok := store.refreshTokens[rotatedRefreshToken]
+	require.True(t, ok, "rotated refresh token must be stored")
+	require.Equal(t, []string{mcp, api}, rotated.Resource,
+		"rotation preserves the full original grant instead of the narrowed subset")
+
+	// a later refresh may therefore target the other originally granted resource
+	refreshReq2, err := store.TokenRequestByRefreshToken(ctx, rotatedRefreshToken)
+	require.NoError(t, err)
+	require.NoError(t, op.ValidateTokenRequestResources([]string{api}, refreshReq2),
+		"refresh to another originally granted resource must be accepted after rotation")
+}

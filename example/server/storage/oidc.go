@@ -244,11 +244,18 @@ func CodeChallengeToOIDC(challenge *OIDCCodeChallenge) *oidc.CodeChallenge {
 
 // RefreshTokenRequestFromBusiness will simply wrap the storage RefreshToken to implement the op.RefreshTokenRequest interface
 func RefreshTokenRequestFromBusiness(token *RefreshToken) op.RefreshTokenRequest {
-	return &RefreshTokenRequest{token}
+	return &RefreshTokenRequest{RefreshToken: token}
 }
 
 type RefreshTokenRequest struct {
 	*RefreshToken
+
+	// currentResources holds the narrowed `resource` selection of the current
+	// token request, as received through SetCurrentResources. It lives on the
+	// per-request wrapper so that narrowing never rewrites the persisted
+	// refresh token grant. It is nil when the token request did not narrow
+	// the grant down.
+	currentResources []string
 }
 
 func (r *RefreshTokenRequest) GetAMR() []string {
@@ -256,20 +263,39 @@ func (r *RefreshTokenRequest) GetAMR() []string {
 }
 
 func (r *RefreshTokenRequest) GetAudience() []string {
-	if len(r.Resource) > 0 {
-		return audienceFromResources(r.ApplicationID, r.Resource)
+	if effective := r.effectiveResources(); len(effective) > 0 {
+		return audienceFromResources(r.ApplicationID, effective)
 	}
 	return r.Audience
 }
 
-// GetResource implements the optional op.ResourceRequest interface.
+// effectiveResources returns the narrowed `resource` selection of the current
+// token request when it narrowed the grant down, otherwise the full granted set.
+func (r *RefreshTokenRequest) effectiveResources() []string {
+	if r.currentResources != nil {
+		return r.currentResources
+	}
+	return r.Resource
+}
+
+// GetResource implements the optional op.ResourceRequest interface. It reports
+// the persisted grant, which narrowing a token request never rewrites.
 func (r *RefreshTokenRequest) GetResource() []string {
 	return r.Resource
 }
 
+// GetCurrentResources implements the optional op.CurrentResourceRequest interface.
+// It reports the narrowed `resource` selection of the current token request, or nil
+// when the token request did not narrow the grant down.
+func (r *RefreshTokenRequest) GetCurrentResources() []string {
+	return r.currentResources
+}
+
 // SetCurrentResources implements the optional op.CurrentResourceSetter interface.
+// It only records the selection on the per-request wrapper; the persisted refresh
+// token grant stays untouched so rotation preserves it.
 func (r *RefreshTokenRequest) SetCurrentResources(resources []string) {
-	r.Resource = resources
+	r.currentResources = resources
 }
 
 func (r *RefreshTokenRequest) GetAuthTime() time.Time {
