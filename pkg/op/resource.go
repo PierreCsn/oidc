@@ -60,6 +60,20 @@ type CurrentResourceRequest interface {
 	GetCurrentResources() []string
 }
 
+// AccessTokenAudienceRequest is an optional interface which may be implemented by
+// the request types returned by [Storage].
+//
+// It reports the audience the issued access token is for. It may differ from
+// [TokenRequest.GetAudience] when resource indicators of [RFC 8707] narrow the
+// access token down to selected resources. [CreateJWT] prefers it over GetAudience
+// when implemented, while [CreateIDToken] keeps using GetAudience: an ID token is
+// issued to the OAuth client, which stays its audience.
+//
+// [RFC 8707]: https://www.rfc-editor.org/rfc/rfc8707
+type AccessTokenAudienceRequest interface {
+	GetAccessTokenAudience() []string
+}
+
 // ValidateResourceIndicators validates the values of the `resource` parameter against
 // [RFC 8707, section 2]: every value must be an absolute URI and must not include a
 // fragment component. Invalid values are rejected with the `invalid_target` error code.

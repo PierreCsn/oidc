@@ -594,7 +594,10 @@ func TestDeviceAuthorizationResources(t *testing.T) {
 
 		// a device access token request may narrow the granted resources down
 		require.NoError(t, op.ValidateTokenRequestResources([]string{granted}, state))
-		assert.Equal(t, []string{granted}, state.GetResource())
+		assert.Equal(t, []string{granted, other}, state.GetResource(), "grant stays stable")
+		assert.Equal(t, []string{granted}, state.GetCurrentResources())
+		assert.Equal(t, []string{"device", granted}, state.GetAccessTokenAudience(),
+			"narrowing narrows the audience the access token is issued for")
 
 		// but may not ask for a resource that was never granted
 		err = op.ValidateTokenRequestResources([]string{"https://other.example.com"}, state)
@@ -603,4 +606,71 @@ func TestDeviceAuthorizationResources(t *testing.T) {
 		require.ErrorAs(t, err, &oidcErr)
 		assert.Equal(t, oidc.InvalidTarget, oidcErr.ErrorType)
 	})
+}
+
+func TestDeviceAuthorizationStateAccessTokenAudience(t *testing.T) {
+	t.Run("without resources it falls back to the audience", func(t *testing.T) {
+		state := &op.DeviceAuthorizationState{ClientID: "device", Audience: []string{"aud"}}
+		want := state.GetAudience()
+		assert.Equal(t, want, state.GetAccessTokenAudience())
+	})
+
+	t.Run("with resources it binds the access audience to the effective selection", func(t *testing.T) {
+		const (
+			granted = "https://mcp.example.com/mcp"
+			other   = "https://api.example.com"
+		)
+		state := &op.DeviceAuthorizationState{
+			ClientID: "device",
+			Resource: []string{granted, other},
+		}
+		assert.Equal(t, []string{"device", granted, other}, state.GetAccessTokenAudience())
+
+		state.SetCurrentResources([]string{granted})
+		assert.Equal(t, []string{granted, other}, state.GetResource(), "grant stays stable")
+		assert.Equal(t, []string{"device", granted}, state.GetAccessTokenAudience())
+	})
+}
+
+// TestDeviceTokenPollNarrowingIsPerRequest is a regression test for F02/F04 in
+// the device flow: narrowing one poll narrows the access token audience of that
+// poll, but the stored state keeps the full grant for the next poll.
+func TestDeviceTokenPollNarrowingIsPerRequest(t *testing.T) {
+	const (
+		granted = "https://mcp.example.com/mcp"
+		other   = "https://api.example.com"
+	)
+	ctx := context.Background()
+
+	req := &oidc.DeviceAuthorizationRequest{
+		Scopes:   []string{"foo", "bar"},
+		ClientID: "device",
+		Resource: []string{granted, other},
+	}
+	values := make(url.Values)
+	testProvider.Encoder().Encode(req, values)
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(values.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r = r.WithContext(op.ContextWithIssuer(r.Context(), testIssuer))
+	w := httptest.NewRecorder()
+	op.DeviceAuthorizationHandler(testProvider)(w, r)
+	require.Less(t, w.Result().StatusCode, 300)
+	response := new(oidc.DeviceAuthorizationResponse)
+	require.NoError(t, json.NewDecoder(w.Result().Body).Decode(response))
+
+	store := testProvider.Storage().(*storage.Storage)
+	require.NoError(t, store.CompleteDeviceAuthorization(ctx, response.UserCode, "id1"))
+
+	// first poll narrows the grant down to a single resource
+	state, err := op.CheckDeviceAuthorizationState(ctx, "device", response.DeviceCode, testProvider)
+	require.NoError(t, err)
+	require.NoError(t, op.ValidateTokenRequestResources([]string{granted}, state))
+	assert.Equal(t, []string{"device", granted}, state.GetAccessTokenAudience())
+
+	// the stored state is untouched: the next poll sees the full grant again
+	again, err := op.CheckDeviceAuthorizationState(ctx, "device", response.DeviceCode, testProvider)
+	require.NoError(t, err)
+	assert.Nil(t, again.GetCurrentResources())
+	assert.Equal(t, []string{granted, other}, again.GetResource())
+	assert.Equal(t, []string{"device", granted, other}, again.GetAccessTokenAudience())
 }

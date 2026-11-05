@@ -146,7 +146,7 @@ func CreateJWT(ctx context.Context, issuer string, tokenRequest TokenRequest, ex
 	ctx, span := Tracer.Start(ctx, "CreateJWT")
 	defer span.End()
 
-	claims := oidc.NewAccessTokenClaims(issuer, tokenRequest.GetSubject(), tokenRequest.GetAudience(), exp, id, client.GetID(), client.ClockSkew())
+	claims := oidc.NewAccessTokenClaims(issuer, tokenRequest.GetSubject(), accessTokenAudience(tokenRequest), exp, id, client.GetID(), client.ClockSkew())
 	if client != nil {
 		restrictedScopes := client.RestrictAdditionalAccessTokenScopes()(tokenRequest.GetScopes())
 
@@ -196,6 +196,16 @@ type IDTokenRequest interface {
 	GetClientID() string
 	GetScopes() []string
 	GetSubject() string
+}
+
+// accessTokenAudience returns the audience the access token is issued for: the
+// audience reported through AccessTokenAudienceRequest when the request
+// implements it, otherwise the request audience.
+func accessTokenAudience(tokenRequest TokenRequest) []string {
+	if request, ok := tokenRequest.(AccessTokenAudienceRequest); ok {
+		return request.GetAccessTokenAudience()
+	}
+	return tokenRequest.GetAudience()
 }
 
 func CreateIDToken(ctx context.Context, issuer string, request IDTokenRequest, validity time.Duration, accessToken, code string, storage Storage, client Client) (string, error) {
