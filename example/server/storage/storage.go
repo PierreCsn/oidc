@@ -953,6 +953,19 @@ func (s *Storage) ClientCredentialsTokenRequest(ctx context.Context, clientID st
 		return nil, errors.New("wrong service user or password")
 	}
 
+	// A service client with an explicit resource policy reports it as the
+	// grant, so token requests for its resources can be checked and bound.
+	// Without a policy the request stays resource-unaware: an explicit
+	// resource is then ignored for backwards compatibility, or rejected when
+	// the provider advertises support and enforces strictly.
+	if client.allowedResources != nil {
+		return &clientCredentialsRequest{
+			clientID:         clientID,
+			scopes:           scopes,
+			grantedResources: client.allowedResources,
+		}, nil
+	}
+
 	return &oidc.JWTTokenRequest{
 		Subject:  client.id,
 		Audience: []string{clientID},

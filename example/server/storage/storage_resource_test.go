@@ -111,6 +111,60 @@ func TestRefreshNarrowingPreservesStoredGrant(t *testing.T) {
 		"refresh to another originally granted resource must be accepted after rotation")
 }
 
+// TestClientCredentialsResourcePolicy shows the client_credentials resource
+// contract: a service client with an explicit resource policy reports it as the
+// grant, so a token request for an allowed resource succeeds and binds the
+// access audience, while anything else fails with invalid_target. A service
+// client without policy cannot honor an explicit resource under strict
+// enforcement.
+func TestClientCredentialsResourcePolicy(t *testing.T) {
+	const (
+		mcp = "https://mcp.example.com/mcp"
+		api = "https://api.example.com"
+	)
+	ctx := context.Background()
+	store := NewStorage(NewUserStore("http://test.example.com"))
+	store.serviceUsers["rs-svc"] = &Client{
+		id:     "rs-svc",
+		secret: "verysecret",
+		grantTypes: []oidc.GrantType{
+			oidc.GrantTypeClientCredentials,
+		},
+		accessTokenType:  op.AccessTokenTypeBearer,
+		allowedResources: []string{mcp},
+	}
+
+	t.Run("allowed resource succeeds and binds the audience", func(t *testing.T) {
+		request, err := store.ClientCredentialsTokenRequest(ctx, "rs-svc", []string{"scope"})
+		require.NoError(t, err)
+		assert.Equal(t, "rs-svc", request.GetSubject())
+		require.NoError(t, op.ValidateTokenRequestResourcesStrict([]string{mcp}, request))
+		aud, ok := request.(op.AccessTokenAudienceRequest)
+		require.True(t, ok)
+		assert.Equal(t, []string{"rs-svc", mcp}, aud.GetAccessTokenAudience())
+	})
+
+	t.Run("resource outside the policy fails", func(t *testing.T) {
+		request, err := store.ClientCredentialsTokenRequest(ctx, "rs-svc", []string{"scope"})
+		require.NoError(t, err)
+		err = op.ValidateTokenRequestResourcesStrict([]string{api}, request)
+		require.Error(t, err)
+		var oidcErr *oidc.Error
+		require.ErrorAs(t, err, &oidcErr)
+		assert.Equal(t, oidc.InvalidTarget, oidcErr.ErrorType)
+	})
+
+	t.Run("service client without policy cannot honor an explicit resource", func(t *testing.T) {
+		request, err := store.ClientCredentialsTokenRequest(ctx, "sid1", []string{"scope"})
+		require.NoError(t, err)
+		err = op.ValidateTokenRequestResourcesStrict([]string{mcp}, request)
+		require.Error(t, err)
+		var oidcErr *oidc.Error
+		require.ErrorAs(t, err, &oidcErr)
+		assert.Equal(t, oidc.InvalidTarget, oidcErr.ErrorType)
+	})
+}
+
 // TestAccessAndIDTokenAudiencesSeparated is a regression test for F05: resource
 // indicators bind the access token audience to the effective resource selection,
 // while ID tokens stay addressed to the OAuth client alone. It issues real JWTs
