@@ -379,15 +379,20 @@ func (r *clientCredentialsRequest) GetAccessTokenAudience() []string {
 // an issued access token to the resource indicators of [RFC 8707] the client asked
 // for.
 //
-// The client_id is always kept alongside the resources. A real implementation
-// would first check the requested resources against a policy of the client, and
-// would likely restrict the audience of the access token to the resources alone.
-// ID tokens are not affected: they stay addressed to the client, see GetAudience.
+// When a resource selection is effective the audience holds the selected
+// resources alone: the client stays identified by the `client_id` claim of the
+// access token, and resource servers check `aud` for their own indicator (see
+// RFC 9068, section 4). Without resources the audience stays the client, as
+// before. A real implementation would first check the requested resources
+// against a policy of the client. ID tokens are not affected: they stay
+// addressed to the client, see GetAudience.
 //
 // [RFC 8707]: https://www.rfc-editor.org/rfc/rfc8707
 func audienceFromResources(clientID string, resources []string) []string {
-	audience := make([]string, 0, len(resources)+1)
-	audience = append(audience, clientID)
+	if len(resources) == 0 {
+		return []string{clientID}
+	}
+	audience := make([]string, 0, len(resources))
 	for _, resource := range resources {
 		if !slices.Contains(audience, resource) {
 			audience = append(audience, resource)

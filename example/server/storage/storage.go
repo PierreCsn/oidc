@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -264,7 +265,7 @@ func (s *Storage) CreateAccessToken(ctx context.Context, request op.TokenRequest
 		applicationID = req.GetClientID()
 	}
 
-	token, err := s.accessToken(applicationID, "", request.GetSubject(), request.GetAudience(), request.GetScopes(), resourcesFromRequest(request))
+	token, err := s.accessToken(applicationID, "", request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request))
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -285,7 +286,7 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, request op.T
 	// if currentRefreshToken is empty (Code Flow) we will have to create a new refresh token
 	if currentRefreshToken == "" {
 		refreshTokenID := uuid.NewString()
-		accessToken, err := s.accessToken(applicationID, refreshTokenID, request.GetSubject(), request.GetAudience(), request.GetScopes(), resourcesFromRequest(request))
+		accessToken, err := s.accessToken(applicationID, refreshTokenID, request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request))
 		if err != nil {
 			return "", "", time.Time{}, err
 		}
@@ -307,7 +308,7 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, request op.T
 
 	newRefreshToken = uuid.NewString()
 
-	accessToken, err := s.accessToken(applicationID, newRefreshToken, request.GetSubject(), request.GetAudience(), request.GetScopes(), resourcesFromRequest(request))
+	accessToken, err := s.accessToken(applicationID, newRefreshToken, request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request))
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
@@ -324,7 +325,7 @@ func (s *Storage) exchangeRefreshToken(ctx context.Context, request op.TokenExch
 	authTime := request.GetAuthTime()
 
 	refreshTokenID := uuid.NewString()
-	accessToken, err := s.accessToken(applicationID, refreshTokenID, request.GetSubject(), request.GetAudience(), request.GetScopes(), resourcesFromRequest(request))
+	accessToken, err := s.accessToken(applicationID, refreshTokenID, request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request))
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
@@ -519,28 +520,55 @@ func (s *Storage) SetIntrospectionFromToken(ctx context.Context, introspection *
 	if token.Expiration.Before(time.Now()) {
 		return fmt.Errorf("token is expired")
 	}
-	// check if the client is part of the requested audience
-	for _, aud := range token.Audience {
-		if aud == clientID {
-			// The introspection response only has to return a boolean (active) if the token is active.
-			// This will automatically be done by the library if you don't return an error.
-			// You can also return further information about the user / associated token.
-			// e.g. the userinfo (equivalent to userinfo endpoint)
+	if !s.authorizedForToken(clientID, token) {
+		return fmt.Errorf("token is not valid for this client")
+	}
+	// The introspection response only has to return a boolean (active) if the token is active.
+	// This will automatically be done by the library if you don't return an error.
+	// You can also return further information about the user / associated token.
+	// e.g. the userinfo (equivalent to userinfo endpoint)
 
-			userInfo := new(oidc.UserInfo)
-			err := s.setUserinfo(ctx, userInfo, subject, clientID, token.Scopes)
-			if err != nil {
-				return err
-			}
-			introspection.SetUserInfo(userInfo)
-			//...and also the requested scopes...
-			introspection.Scope = token.Scopes
-			//...and the client the token was issued to
-			introspection.ClientID = token.ApplicationID
-			return nil
+	userInfo := new(oidc.UserInfo)
+	err := s.setUserinfo(ctx, userInfo, subject, clientID, token.Scopes)
+	if err != nil {
+		return err
+	}
+	introspection.SetUserInfo(userInfo)
+	//...and also the requested scopes...
+	introspection.Scope = token.Scopes
+	//...and the client the token was issued to
+	introspection.ClientID = token.ApplicationID
+	//...and the audience the token was issued for, so the caller can check it
+	// is the intended recipient
+	introspection.Audience = oidc.Audience(slices.Clone(token.Audience))
+	return nil
+}
+
+// authorizedForToken reports whether the introspecting client may learn about
+// the token. The client the token was issued to always may. Otherwise a token
+// without resources stays restricted to its audience (historical behavior),
+// while a token issued for resources requires the caller to be a registered
+// client associated with one of the token audiences: a resource server must
+// never learn about a token issued for another resource.
+func (s *Storage) authorizedForToken(clientID string, token *Token) bool {
+	if clientID == token.ApplicationID {
+		return true
+	}
+	if len(token.Resource) == 0 {
+		return slices.Contains(token.Audience, clientID)
+	}
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	client, ok := s.clients[clientID]
+	if !ok {
+		return false
+	}
+	for _, audience := range token.Audience {
+		if slices.Contains(client.allowedResources, audience) {
+			return true
 		}
 	}
-	return fmt.Errorf("token is not valid for this client")
+	return false
 }
 
 // GetPrivateClaimsFromScopes implements the op.Storage interface

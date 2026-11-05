@@ -223,7 +223,7 @@ func TestServerRoutes(t *testing.T) {
 			wantCode: http.StatusOK,
 			contains: []string{
 				`{"active":true,"scope":"openid offline_access email profile phone","client_id":"web","exp":`,
-				`,"sub":"id1","username":"test-user@localhost","name":"Test User","given_name":"Test","family_name":"User","locale":"de","preferred_username":"test-user@localhost","email":"test-user@zitadel.ch","email_verified":true}`,
+				`,"sub":"id1","aud":["web"],"username":"test-user@localhost","name":"Test User","given_name":"Test","family_name":"User","locale":"de","preferred_username":"test-user@localhost","email":"test-user@zitadel.ch","email_verified":true}`,
 			},
 		},
 		{

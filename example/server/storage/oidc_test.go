@@ -30,7 +30,7 @@ func TestAuthRequestResources(t *testing.T) {
 		}, "id1")
 		assert.Equal(t, []string{mcp, api}, authReq.GetResource())
 		assert.Equal(t, []string{"web"}, authReq.GetAudience(), "ID tokens stay addressed to the client")
-		assert.Equal(t, []string{"web", mcp, api}, authReq.GetAccessTokenAudience())
+		assert.Equal(t, []string{mcp, api}, authReq.GetAccessTokenAudience())
 	})
 
 	t.Run("a token request narrows the access token audience down", func(t *testing.T) {
@@ -41,7 +41,7 @@ func TestAuthRequestResources(t *testing.T) {
 		authReq.SetCurrentResources([]string{mcp})
 		assert.Equal(t, []string{mcp, api}, authReq.GetResource(), "grant stays stable")
 		assert.Equal(t, []string{"web"}, authReq.GetAudience())
-		assert.Equal(t, []string{"web", mcp}, authReq.GetAccessTokenAudience())
+		assert.Equal(t, []string{mcp}, authReq.GetAccessTokenAudience())
 	})
 }
 
@@ -56,7 +56,7 @@ func TestRefreshTokenRequestResources(t *testing.T) {
 	assert.Equal(t, []string{"web"}, request.GetAudience(), "ID tokens stay addressed to the client")
 	accessAud, ok := request.(op.AccessTokenAudienceRequest)
 	require.True(t, ok)
-	assert.Equal(t, []string{"web", mcp}, accessAud.GetAccessTokenAudience())
+	assert.Equal(t, []string{mcp}, accessAud.GetAccessTokenAudience())
 
 	// a refresh request without any resource keeps the client audience
 	stored := RefreshTokenRequestFromBusiness(&RefreshToken{
