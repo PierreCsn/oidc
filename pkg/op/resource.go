@@ -69,6 +69,14 @@ type CurrentResourceRequest interface {
 // when implemented, while [CreateIDToken] keeps using GetAudience: an ID token is
 // issued to the OAuth client, which stays its audience.
 //
+// When a resource selection is effective, implementations SHOULD report the
+// selected resources alone, without prepending the client: the client stays
+// identified by the `client_id` claim of the access token and by GetAudience.
+// Resource servers validate that `aud` contains their own indicator (see
+// RFC 9068, section 4), so an audience of unselected parties weakens that
+// check. When no resource applies, implementations SHOULD fall back to the
+// request audience to preserve historical behavior.
+//
 // [RFC 8707]: https://www.rfc-editor.org/rfc/rfc8707
 type AccessTokenAudienceRequest interface {
 	GetAccessTokenAudience() []string

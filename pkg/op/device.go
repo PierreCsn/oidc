@@ -362,15 +362,15 @@ func (r *DeviceAuthorizationState) effectiveResources() []string {
 
 // GetAccessTokenAudience implements the [AccessTokenAudienceRequest] interface.
 // It binds the access token audience to the effective resource selection of the
-// current token request, keeping the client as an audience as GetAudience does.
-// When the flow does not use resources, it falls back to GetAudience.
+// current token request. The client is intentionally not added: it stays
+// identified by the `client_id` claim of the access token. When the flow does
+// not use resources, it falls back to GetAudience.
 func (r *DeviceAuthorizationState) GetAccessTokenAudience() []string {
 	effective := r.effectiveResources()
 	if len(effective) == 0 {
 		return r.GetAudience()
 	}
-	audience := make([]string, 0, len(effective)+1)
-	audience = append(audience, r.ClientID)
+	audience := make([]string, 0, len(effective))
 	for _, resource := range effective {
 		if !slices.Contains(audience, resource) {
 			audience = append(audience, resource)

@@ -596,7 +596,7 @@ func TestDeviceAuthorizationResources(t *testing.T) {
 		require.NoError(t, op.ValidateTokenRequestResources([]string{granted}, state))
 		assert.Equal(t, []string{granted, other}, state.GetResource(), "grant stays stable")
 		assert.Equal(t, []string{granted}, state.GetCurrentResources())
-		assert.Equal(t, []string{"device", granted}, state.GetAccessTokenAudience(),
+		assert.Equal(t, []string{granted}, state.GetAccessTokenAudience(),
 			"narrowing narrows the audience the access token is issued for")
 
 		// but may not ask for a resource that was never granted
@@ -624,11 +624,11 @@ func TestDeviceAuthorizationStateAccessTokenAudience(t *testing.T) {
 			ClientID: "device",
 			Resource: []string{granted, other},
 		}
-		assert.Equal(t, []string{"device", granted, other}, state.GetAccessTokenAudience())
+		assert.Equal(t, []string{granted, other}, state.GetAccessTokenAudience())
 
 		state.SetCurrentResources([]string{granted})
 		assert.Equal(t, []string{granted, other}, state.GetResource(), "grant stays stable")
-		assert.Equal(t, []string{"device", granted}, state.GetAccessTokenAudience())
+		assert.Equal(t, []string{granted}, state.GetAccessTokenAudience())
 	})
 }
 
@@ -665,12 +665,12 @@ func TestDeviceTokenPollNarrowingIsPerRequest(t *testing.T) {
 	state, err := op.CheckDeviceAuthorizationState(ctx, "device", response.DeviceCode, testProvider)
 	require.NoError(t, err)
 	require.NoError(t, op.ValidateTokenRequestResources([]string{granted}, state))
-	assert.Equal(t, []string{"device", granted}, state.GetAccessTokenAudience())
+	assert.Equal(t, []string{granted}, state.GetAccessTokenAudience())
 
 	// the stored state is untouched: the next poll sees the full grant again
 	again, err := op.CheckDeviceAuthorizationState(ctx, "device", response.DeviceCode, testProvider)
 	require.NoError(t, err)
 	assert.Nil(t, again.GetCurrentResources())
 	assert.Equal(t, []string{granted, other}, again.GetResource())
-	assert.Equal(t, []string{"device", granted, other}, again.GetAccessTokenAudience())
+	assert.Equal(t, []string{granted, other}, again.GetAccessTokenAudience())
 }
