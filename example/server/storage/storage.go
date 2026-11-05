@@ -855,9 +855,10 @@ func (s *Storage) StoreDeviceAuthorizationWithResources(ctx context.Context, cli
 		userCode:   userCode,
 		state: &op.DeviceAuthorizationState{
 			ClientID: clientID,
-			// op.DeviceAuthorizationState.GetAudience always adds the client_id,
-			// so the requested resources alone are enough to bind the audience.
-			Audience: resources,
+			// The stored Audience stays empty: GetAudience always adds the
+			// client_id, so ID tokens stay addressed to the client, while the
+			// access token audience is derived from Resource through
+			// GetAccessTokenAudience.
 			Scopes:   scopes,
 			Resource: resources,
 			Expires:  expires,

@@ -590,7 +590,7 @@ func TestDeviceAuthorizationResources(t *testing.T) {
 			GetDeviceAuthorizatonState(context.Background(), "device", response.DeviceCode)
 		require.NoError(t, err)
 		assert.Equal(t, []string{granted, other}, state.GetResource())
-		assert.Equal(t, []string{granted, other, "device"}, state.GetAudience())
+		assert.Equal(t, []string{"device"}, state.GetAudience(), "ID tokens stay addressed to the client")
 
 		// a device access token request may narrow the granted resources down
 		require.NoError(t, op.ValidateTokenRequestResources([]string{granted}, state))

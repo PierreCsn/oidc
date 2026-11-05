@@ -84,7 +84,16 @@ func (a *AuthRequest) GetAMR() []string {
 	return nil
 }
 
+// GetAudience reports the audience of ID tokens issued for this request, which
+// stays the OAuth client: resource indicators only narrow access tokens.
 func (a *AuthRequest) GetAudience() []string {
+	return []string{a.ApplicationID}
+}
+
+// GetAccessTokenAudience implements the optional op.AccessTokenAudienceRequest
+// interface. It binds the access token audience to the effective resource
+// selection of the current token request.
+func (a *AuthRequest) GetAccessTokenAudience() []string {
 	return audienceFromResources(a.ApplicationID, a.effectiveResources())
 }
 
@@ -262,11 +271,17 @@ func (r *RefreshTokenRequest) GetAMR() []string {
 	return r.AMR
 }
 
+// GetAudience reports the audience of ID tokens issued for this request, which
+// stays the OAuth client: resource indicators only narrow access tokens.
 func (r *RefreshTokenRequest) GetAudience() []string {
-	if effective := r.effectiveResources(); len(effective) > 0 {
-		return audienceFromResources(r.ApplicationID, effective)
-	}
-	return r.Audience
+	return []string{r.ApplicationID}
+}
+
+// GetAccessTokenAudience implements the optional op.AccessTokenAudienceRequest
+// interface. It binds the access token audience to the effective resource
+// selection of the current token request.
+func (r *RefreshTokenRequest) GetAccessTokenAudience() []string {
+	return audienceFromResources(r.ApplicationID, r.effectiveResources())
 }
 
 // effectiveResources returns the narrowed `resource` selection of the current
@@ -319,12 +334,13 @@ func (r *RefreshTokenRequest) SetCurrentScopes(scopes []string) {
 }
 
 // audienceFromResources shows how a Storage implementation can bind the audience of
-// the issued tokens to the resource indicators of [RFC 8707] the client asked for.
+// an issued access token to the resource indicators of [RFC 8707] the client asked
+// for.
 //
-// The client_id is always kept, because an ID token must be addressed to the client
-// it was issued for. A real implementation would first check the requested resources
-// against a policy of the client, and would likely restrict the audience of the access
-// token to the resources alone.
+// The client_id is always kept alongside the resources. A real implementation
+// would first check the requested resources against a policy of the client, and
+// would likely restrict the audience of the access token to the resources alone.
+// ID tokens are not affected: they stay addressed to the client, see GetAudience.
 //
 // [RFC 8707]: https://www.rfc-editor.org/rfc/rfc8707
 func audienceFromResources(clientID string, resources []string) []string {
