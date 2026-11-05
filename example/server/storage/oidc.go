@@ -41,8 +41,15 @@ type AuthRequest struct {
 	CodeChallenge *OIDCCodeChallenge
 
 	// Resource holds the resource indicators (RFC 8707) requested by the client.
-	// A token request may narrow them down again, see SetCurrentResources.
+	// It is the original grant and stays untouched when a token request
+	// narrows it down, so that refresh tokens can remain bound to the full
+	// grant as RFC 8707 section 2.2 requires. See currentResources.
 	Resource []string
+
+	// currentResources holds the narrowed `resource` selection of the current
+	// token request, as received through SetCurrentResources. It is nil when
+	// the token request did not narrow the grant down.
+	currentResources []string
 
 	done     bool
 	authTime time.Time
@@ -78,7 +85,16 @@ func (a *AuthRequest) GetAMR() []string {
 }
 
 func (a *AuthRequest) GetAudience() []string {
-	return audienceFromResources(a.ApplicationID, a.Resource)
+	return audienceFromResources(a.ApplicationID, a.effectiveResources())
+}
+
+// effectiveResources returns the narrowed `resource` selection of the current
+// token request when it narrowed the grant down, otherwise the full granted set.
+func (a *AuthRequest) effectiveResources() []string {
+	if a.currentResources != nil {
+		return a.currentResources
+	}
+	return a.Resource
 }
 
 // GetResource implements the optional op.ResourceRequest interface, which lets the
@@ -88,12 +104,20 @@ func (a *AuthRequest) GetResource() []string {
 	return a.Resource
 }
 
+// GetCurrentResources implements the optional op.CurrentResourceRequest interface.
+// It reports the narrowed `resource` selection of the current token request, or nil
+// when the token request did not narrow the grant down.
+func (a *AuthRequest) GetCurrentResources() []string {
+	return a.currentResources
+}
+
 // SetCurrentResources implements the optional op.CurrentResourceSetter interface.
 // It is called with the `resource` values of a token request, after they have been
 // checked against the resources of the authorization request, so that the audience
-// of the issued tokens can be narrowed down to them.
+// of the issued tokens can be narrowed down to them. The original grant in Resource
+// is left untouched.
 func (a *AuthRequest) SetCurrentResources(resources []string) {
-	a.Resource = resources
+	a.currentResources = resources
 }
 
 func (a *AuthRequest) GetAuthTime() time.Time {
@@ -289,10 +313,16 @@ func audienceFromResources(clientID string, resources []string) []string {
 }
 
 // resourcesFromRequest returns the resource indicators of [RFC 8707] a token request
-// was made for, if the request reports any.
+// was made for, if the request reports any: the narrowed selection of the current
+// token request when it narrowed the grant down, otherwise the full granted set.
 //
 // [RFC 8707]: https://www.rfc-editor.org/rfc/rfc8707
 func resourcesFromRequest(request op.TokenRequest) []string {
+	if current, ok := request.(op.CurrentResourceRequest); ok {
+		if resources := current.GetCurrentResources(); resources != nil {
+			return resources
+		}
+	}
 	if resourceRequest, ok := request.(op.ResourceRequest); ok {
 		return resourceRequest.GetResource()
 	}

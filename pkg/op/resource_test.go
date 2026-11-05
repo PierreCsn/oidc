@@ -89,10 +89,15 @@ type resourceRequest struct {
 	currentResources []string
 }
 
+var _ op.CurrentResourceRequest = (*resourceRequest)(nil)
+
 func (r *resourceRequest) GetSubject() string    { return "id1" }
 func (r *resourceRequest) GetAudience() []string { return []string{"client1"} }
 func (r *resourceRequest) GetScopes() []string   { return []string{"openid"} }
 func (r *resourceRequest) GetResource() []string { return r.resources }
+func (r *resourceRequest) GetCurrentResources() []string {
+	return r.currentResources
+}
 func (r *resourceRequest) SetCurrentResources(resources []string) {
 	r.currentResources = resources
 }

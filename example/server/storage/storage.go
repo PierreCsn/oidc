@@ -289,7 +289,13 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, request op.T
 		if err != nil {
 			return "", "", time.Time{}, err
 		}
-		refreshToken, err := s.createRefreshToken(accessToken, amr, authTime)
+		// The refresh token stays bound to the full original grant (RFC 8707
+		// section 2.2), not to the narrowed subset the access token was issued for.
+		grantedResources := accessToken.Resource
+		if granted, ok := request.(op.ResourceRequest); ok {
+			grantedResources = granted.GetResource()
+		}
+		refreshToken, err := s.createRefreshToken(accessToken, amr, authTime, grantedResources)
 		if err != nil {
 			return "", "", time.Time{}, err
 		}
@@ -323,7 +329,7 @@ func (s *Storage) exchangeRefreshToken(ctx context.Context, request op.TokenExch
 		return "", "", time.Time{}, err
 	}
 
-	refreshToken, err := s.createRefreshToken(accessToken, nil, authTime)
+	refreshToken, err := s.createRefreshToken(accessToken, nil, authTime, accessToken.Resource)
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
@@ -590,8 +596,10 @@ func (s *Storage) Health(ctx context.Context) error {
 	return nil
 }
 
-// createRefreshToken will store a refresh_token in-memory based on the provided information
-func (s *Storage) createRefreshToken(accessToken *Token, amr []string, authTime time.Time) (string, error) {
+// createRefreshToken will store a refresh_token in-memory based on the provided information.
+// grantedResources is the full original resource grant the refresh token stays bound
+// to, which may be wider than the narrowed subset of the access token.
+func (s *Storage) createRefreshToken(accessToken *Token, amr []string, authTime time.Time, grantedResources []string) (string, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	token := &RefreshToken{
@@ -605,7 +613,7 @@ func (s *Storage) createRefreshToken(accessToken *Token, amr []string, authTime 
 		Expiration:    time.Now().Add(5 * time.Hour),
 		Scopes:        accessToken.Scopes,
 		AccessToken:   accessToken.ID,
-		Resource:      accessToken.Resource,
+		Resource:      grantedResources,
 	}
 	s.refreshTokens[token.ID] = token
 	return token.Token, nil

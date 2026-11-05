@@ -48,6 +48,18 @@ type CurrentResourceSetter interface {
 	SetCurrentResources(resources []string)
 }
 
+// CurrentResourceRequest is an optional interface which may be implemented by the
+// request types returned by [Storage] alongside [CurrentResourceSetter].
+//
+// It reports the narrowed `resource` selection of the current token request, as
+// received through [CurrentResourceSetter.SetCurrentResources], as opposed to
+// [ResourceRequest.GetResource], which keeps reporting the original grant. A nil
+// return means the token request did not narrow the grant down, in which case the
+// full granted set applies to the issued access token.
+type CurrentResourceRequest interface {
+	GetCurrentResources() []string
+}
+
 // ValidateResourceIndicators validates the values of the `resource` parameter against
 // [RFC 8707, section 2]: every value must be an absolute URI and must not include a
 // fragment component. Invalid values are rejected with the `invalid_target` error code.
