@@ -34,6 +34,14 @@ type Client struct {
 	clockSkew                      time.Duration
 	postLogoutRedirectURIGlobs     []string
 	redirectURIGlobs               []string
+
+	// allowedResources lists the RFC 8707 resource URIs this client is
+	// associated with, or nil when the client has no resource policy. For a
+	// service client it is the client credentials grant policy: only those
+	// resources may be requested and bound to the access token audience. For
+	// a resource server client it authorizes introspection of tokens issued
+	// for those resources.
+	allowedResources []string
 }
 
 // GetID must return the client_id

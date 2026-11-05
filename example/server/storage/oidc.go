@@ -333,6 +333,48 @@ func (r *RefreshTokenRequest) SetCurrentScopes(scopes []string) {
 	r.Scopes = scopes
 }
 
+// clientCredentialsRequest is the TokenRequest of the client credentials grant
+// for service clients with an explicit resource policy. The policy plays the
+// role of the original grant: a token request may only select resources from
+// it, and the access token audience is bound to the selection.
+type clientCredentialsRequest struct {
+	clientID         string
+	scopes           []string
+	grantedResources []string
+	currentResources []string
+}
+
+func (r *clientCredentialsRequest) GetSubject() string    { return r.clientID }
+func (r *clientCredentialsRequest) GetAudience() []string { return []string{r.clientID} }
+func (r *clientCredentialsRequest) GetScopes() []string   { return r.scopes }
+
+// GetResource implements the optional op.ResourceRequest interface. It reports
+// the service client's resource policy.
+func (r *clientCredentialsRequest) GetResource() []string { return r.grantedResources }
+
+// GetCurrentResources implements the optional op.CurrentResourceRequest interface.
+// It reports the narrowed `resource` selection of the current token request, or nil
+// when the token request did not narrow the policy down.
+func (r *clientCredentialsRequest) GetCurrentResources() []string {
+	return r.currentResources
+}
+
+// SetCurrentResources implements the optional op.CurrentResourceSetter interface.
+func (r *clientCredentialsRequest) SetCurrentResources(resources []string) {
+	r.currentResources = resources
+}
+
+// GetAccessTokenAudience implements the optional op.AccessTokenAudienceRequest
+// interface. It binds the access token audience to the effective resource
+// selection of the current token request.
+func (r *clientCredentialsRequest) GetAccessTokenAudience() []string {
+	effective := r.grantedResources
+	if r.currentResources != nil {
+		effective = r.currentResources
+	}
+	return audienceFromResources(r.clientID, effective)
+}
+
 // audienceFromResources shows how a Storage implementation can bind the audience of
 // an issued access token to the resource indicators of [RFC 8707] the client asked
 // for.
