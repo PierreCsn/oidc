@@ -74,6 +74,22 @@ type AccessTokenAudienceRequest interface {
 	GetAccessTokenAudience() []string
 }
 
+// ResourceIndicatorsSupportedProvider is an optional interface a provider may
+// implement to report whether it advertises support for the `resource` parameter
+// defined by [RFC 8707] (see [Config.ResourceIndicatorsSupported] and the
+// `resource_indicators_supported` discovery metadata).
+//
+// The token endpoint paths of this package select strict resource enforcement
+// ([ValidateTokenRequestResourcesStrict]) when the provider implements it and
+// reports true, and the backwards-compatible [ValidateTokenRequestResources]
+// otherwise. Providers that do not implement it are treated as not advertising
+// the feature.
+//
+// [RFC 8707]: https://www.rfc-editor.org/rfc/rfc8707
+type ResourceIndicatorsSupportedProvider interface {
+	ResourceIndicatorsSupported() bool
+}
+
 // ValidateResourceIndicators validates the values of the `resource` parameter against
 // [RFC 8707, section 2]: every value must be an absolute URI and must not include a
 // fragment component. Invalid values are rejected with the `invalid_target` error code.
@@ -119,6 +135,12 @@ func ValidateResourceIndicators(resources []string) error {
 // of the issued tokens accordingly. An empty `resource` parameter leaves the granted
 // resources untouched, as the RFC requires.
 //
+// When the provider advertises support for resource indicators (see
+// [ResourceIndicatorsSupportedProvider]), the token endpoint paths of this package
+// use [ValidateTokenRequestResourcesStrict] instead, which fails closed on
+// requests the Storage implementation cannot fully honor. Custom servers that
+// advertise the feature SHOULD do the same.
+//
 // [RFC 8707, section 2.2]: https://www.rfc-editor.org/rfc/rfc8707#section-2.2
 func ValidateTokenRequestResources(requestedResources []string, request TokenRequest) error {
 	if err := ValidateResourceIndicators(requestedResources); err != nil {
@@ -140,4 +162,75 @@ func ValidateTokenRequestResources(requestedResources []string, request TokenReq
 		setter.SetCurrentResources(requestedResources)
 	}
 	return nil
+}
+
+// ValidateTokenRequestResourcesStrict validates the `resource` values of a token
+// request for providers that advertise support for [RFC 8707]. It behaves like
+// [ValidateTokenRequestResources], except that an explicitly requested resource is
+// rejected with `invalid_target` unless the request demonstrates the full
+// resource-indicator contract: reporting the granted resources
+// ([ResourceRequest]), accepting the narrowed selection ([CurrentResourceSetter])
+// and reporting the access token audience ([AccessTokenAudienceRequest]).
+// Requests that omit `resource` are unaffected, as are providers that do not
+// advertise the feature (they keep using [ValidateTokenRequestResources]).
+//
+// What this guarantees: a token is never issued for an explicitly requested
+// resource the Storage implementation cannot check against a grant and select
+// for the access token audience. What it cannot guarantee: the Storage
+// implementation must still truthfully report the grant, keep the delivered
+// selection apart from it, and bind the issued access token audience to the
+// selection. Those obligations are documented on the interfaces and demonstrated
+// by the example storage.
+//
+// [RFC 8707]: https://www.rfc-editor.org/rfc/rfc8707
+func ValidateTokenRequestResourcesStrict(requestedResources []string, request TokenRequest) error {
+	if err := ValidateResourceIndicators(requestedResources); err != nil {
+		return err
+	}
+	if len(requestedResources) == 0 {
+		return nil
+	}
+	granted, ok := request.(ResourceRequest)
+	if !ok {
+		return oidc.ErrInvalidTarget().
+			WithDescription("request does not report the original resource grant")
+	}
+	setter, ok := request.(CurrentResourceSetter)
+	if !ok {
+		return oidc.ErrInvalidTarget().
+			WithDescription("request does not accept narrowed resources")
+	}
+	if _, ok := request.(AccessTokenAudienceRequest); !ok {
+		return oidc.ErrInvalidTarget().
+			WithDescription("request does not report the access token audience")
+	}
+	grantedResources := granted.GetResource()
+	for _, resource := range requestedResources {
+		if !slices.Contains(grantedResources, resource) {
+			return oidc.ErrInvalidTarget().
+				WithDescription("resource parameter %q was not granted by the authorization request", resource)
+		}
+	}
+	setter.SetCurrentResources(requestedResources)
+	return nil
+}
+
+// advertisesResourceIndicators reports whether provider claims support for the
+// `resource` parameter defined by [RFC 8707]. Providers that do not implement
+// [ResourceIndicatorsSupportedProvider] are treated as not advertising it.
+func advertisesResourceIndicators(provider any) bool {
+	supported, ok := provider.(ResourceIndicatorsSupportedProvider)
+	return ok && supported.ResourceIndicatorsSupported()
+}
+
+// validateTokenRequestResources validates an explicitly requested `resource`
+// selection strictly when provider advertises support for [RFC 8707], and with
+// the backwards-compatible [ValidateTokenRequestResources] otherwise. All token
+// endpoint paths of this package route through it so that every grant reports
+// the same decision.
+func validateTokenRequestResources(provider any, requestedResources []string, request TokenRequest) error {
+	if advertisesResourceIndicators(provider) {
+		return ValidateTokenRequestResourcesStrict(requestedResources, request)
+	}
+	return ValidateTokenRequestResources(requestedResources, request)
 }
