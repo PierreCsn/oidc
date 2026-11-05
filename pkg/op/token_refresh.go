@@ -75,7 +75,7 @@ func ValidateRefreshTokenRequest(ctx context.Context, tokenReq *oidc.RefreshToke
 	if err = ValidateRefreshTokenScopes(tokenReq.Scopes, request); err != nil {
 		return nil, nil, err
 	}
-	if err = ValidateTokenRequestResources(tokenReq.Resource, request); err != nil {
+	if err = validateTokenRequestResources(exchanger, tokenReq.Resource, request); err != nil {
 		return nil, nil, err
 	}
 	return request, client, nil

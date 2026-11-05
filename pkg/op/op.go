@@ -420,6 +420,14 @@ func (o *Provider) RequestObjectSupported() bool {
 	return o.config.RequestObjectSupported
 }
 
+// ResourceIndicatorsSupported implements [ResourceIndicatorsSupportedProvider].
+// It reports whether the provider advertises support for the `resource`
+// parameter defined by RFC 8707, in which case token requests carrying an
+// explicit `resource` are validated strictly.
+func (o *Provider) ResourceIndicatorsSupported() bool {
+	return o.config.ResourceIndicatorsSupported
+}
+
 func (o *Provider) RequestObjectSigningAlgorithmsSupported() []string {
 	return []string{"RS256"}
 }

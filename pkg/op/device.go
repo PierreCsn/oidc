@@ -101,6 +101,17 @@ func createDeviceAuthorization(ctx context.Context, req *oidc.DeviceAuthorizatio
 		return nil, NewStatusError(err, http.StatusInternalServerError)
 	}
 
+	// When the provider advertises support for resource indicators, an explicit
+	// `resource` must not be silently dropped before the user approves the
+	// request: without the stored grant, no later token request could be
+	// checked or narrowed correctly.
+	if len(req.Resource) > 0 {
+		if _, ok := storage.(CanStoreDeviceAuthorizationWithResources); !ok && advertisesResourceIndicators(o) {
+			return nil, oidc.ErrInvalidTarget().
+				WithDescription("device authorization storage does not support resource indicators")
+		}
+	}
+
 	expires := time.Now().Add(config.Lifetime)
 	if resourceStorage, ok := storage.(CanStoreDeviceAuthorizationWithResources); ok {
 		err = resourceStorage.StoreDeviceAuthorizationWithResources(ctx, clientID, deviceCode, userCode, expires, req.Scopes, req.Resource)
@@ -235,7 +246,7 @@ func deviceAccessToken(w http.ResponseWriter, r *http.Request, exchanger Exchang
 	if err != nil {
 		return err
 	}
-	if err = ValidateTokenRequestResources(req.Resource, tokenRequest); err != nil {
+	if err = validateTokenRequestResources(exchanger, req.Resource, tokenRequest); err != nil {
 		return err
 	}
 
