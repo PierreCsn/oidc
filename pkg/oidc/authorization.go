@@ -95,7 +95,7 @@ type AuthRequest struct {
 	// of the auth request.
 	//
 	// [RFC 8707]: https://www.rfc-editor.org/rfc/rfc8707
-	Resource []string `json:"resource" schema:"resource"`
+	Resource ResourceIndicators `json:"resource" schema:"resource"`
 
 	CodeChallenge       string              `json:"code_challenge" schema:"code_challenge"`
 	CodeChallengeMethod CodeChallengeMethod `json:"code_challenge_method" schema:"code_challenge_method"`

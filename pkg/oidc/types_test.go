@@ -70,6 +70,71 @@ func TestAudience_UnmarshalText(t *testing.T) {
 	}
 }
 
+func TestResourceIndicators_JSON(t *testing.T) {
+	t.Run("marshal", func(t *testing.T) {
+		for _, tt := range []struct {
+			name      string
+			resources ResourceIndicators
+			want      string
+		}{
+			{"nil", nil, `null`},
+			{"empty", ResourceIndicators{}, `null`},
+			{"single value is a JSON string", ResourceIndicators{"https://api.example.com/"}, `"https://api.example.com/"`},
+			{"multiple values are a JSON array", ResourceIndicators{"https://a.example.com/", "https://b.example.com/"}, `["https://a.example.com/","https://b.example.com/"]`},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				got, err := json.Marshal(tt.resources)
+				require.NoError(t, err)
+				assert.JSONEq(t, tt.want, string(got))
+			})
+		}
+	})
+
+	t.Run("unmarshal", func(t *testing.T) {
+		for _, tt := range []struct {
+			name    string
+			data    string
+			want    ResourceIndicators
+			wantErr bool
+		}{
+			{"null", `null`, nil, false},
+			{"single value as string", `"https://api.example.com/"`, ResourceIndicators{"https://api.example.com/"}, false},
+			{"multiple values as array", `["https://a.example.com/","https://b.example.com/"]`, ResourceIndicators{"https://a.example.com/", "https://b.example.com/"}, false},
+			{"empty array", `[]`, ResourceIndicators{}, false},
+			{"invalid JSON", `{`, nil, true},
+			{"number", `42`, nil, true},
+			{"non-string array element", `["https://a.example.com/", 42]`, nil, true},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				var got ResourceIndicators
+				err := json.Unmarshal([]byte(tt.data), &got)
+				if tt.wantErr {
+					require.Error(t, err)
+					return
+				}
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			})
+		}
+	})
+
+	t.Run("auth request with a single resource serializes it as a string", func(t *testing.T) {
+		got, err := json.Marshal(AuthRequest{Resource: ResourceIndicators{"https://api.example.com/"}})
+		require.NoError(t, err)
+		assert.Contains(t, string(got), `"resource":"https://api.example.com/"`)
+
+		var decoded AuthRequest
+		require.NoError(t, json.Unmarshal(got, &decoded))
+		assert.Equal(t, ResourceIndicators{"https://api.example.com/"}, decoded.Resource)
+	})
+
+	t.Run("auth request without resource keeps the absent representation", func(t *testing.T) {
+		got, err := json.Marshal(AuthRequest{})
+		require.NoError(t, err)
+		assert.Contains(t, string(got), `"resource":null`)
+	})
+}
+
 func TestAuthenticationMethodsReferences_UnmarshalJSON(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -35,6 +35,50 @@ func (a *Audience) UnmarshalJSON(text []byte) error {
 	return nil
 }
 
+// ResourceIndicators holds the `resource` values of [RFC 8707] of an
+// authorization request. For an authorization request sent as a JSON Web Token
+// (JWT), a single value is represented as a JSON string while multiple values
+// are represented as an array of strings, as RFC 8707 section 2.1 requires.
+// Both shapes are accepted when parsing.
+//
+// [RFC 8707]: https://www.rfc-editor.org/rfc/rfc8707
+type ResourceIndicators []string
+
+// MarshalJSON implements [encoding/json.Marshaler].
+func (r ResourceIndicators) MarshalJSON() ([]byte, error) {
+	switch len(r) {
+	case 0:
+		return []byte("null"), nil
+	case 1:
+		return json.Marshal(r[0])
+	default:
+		return json.Marshal([]string(r))
+	}
+}
+
+// UnmarshalJSON implements [encoding/json.Unmarshaler].
+func (r *ResourceIndicators) UnmarshalJSON(data []byte) error {
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return fmt.Errorf("oidc resource: %w", err)
+	}
+	switch resources := value.(type) {
+	case nil:
+		*r = nil
+	case string:
+		*r = ResourceIndicators{resources}
+	case []any:
+		parsed, err := gu.AssertInterfaces[string](resources)
+		if err != nil {
+			return fmt.Errorf("oidc resource: %w", err)
+		}
+		*r = ResourceIndicators(parsed)
+	default:
+		return fmt.Errorf("oidc resource: unsupported type: %T", value)
+	}
+	return nil
+}
+
 type AuthenticationMethodsReferences []string
 
 func (a *AuthenticationMethodsReferences) UnmarshalJSON(data []byte) error {

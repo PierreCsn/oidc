@@ -278,7 +278,7 @@ func ValidateAuthRequestClient(ctx context.Context, authReq *oidc.AuthRequest, c
 	if err := ValidateAuthReqResponseType(client, authReq.ResponseType); err != nil {
 		return "", err
 	}
-	if err := ValidateResourceIndicators(authReq.Resource); err != nil {
+	if err := ValidateResourceIndicators([]string(authReq.Resource)); err != nil {
 		return "", err
 	}
 	return ValidateAuthReqIDTokenHint(ctx, authReq.IDTokenHint, verifier)

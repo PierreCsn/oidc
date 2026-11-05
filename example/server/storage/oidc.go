@@ -219,7 +219,7 @@ func authRequestToInternal(authReq *oidc.AuthRequest, userID string) *AuthReques
 		ResponseMode:  authReq.ResponseMode,
 		Nonce:         authReq.Nonce,
 		CodeChallenge: codeChallenge,
-		Resource:      authReq.Resource,
+		Resource:      []string(authReq.Resource),
 	}
 }
 
