@@ -27,11 +27,12 @@ const (
 )
 
 // r02Store returns a Storage holding the issuing web client and two resource
-// server clients, each explicitly mapped to the resource URI it serves.
+// server clients, each explicitly mapped to the resource URI it serves
+// through its introspection policy.
 func r02Store() *Storage {
 	web := WebClient(r02client, "secret")
-	rsA := &Client{id: "rs-a", secret: "secret", allowedResources: []string{r02resA}}
-	rsB := &Client{id: "rs-b", secret: "secret", allowedResources: []string{r02resB}}
+	rsA := &Client{id: "rs-a", secret: "secret", introspectionResources: []string{r02resA}}
+	rsB := &Client{id: "rs-b", secret: "secret", introspectionResources: []string{r02resB}}
 	return NewStorageWithClients(
 		NewUserStore("http://test.example.com"),
 		map[string]*Client{r02client: web, "rs-a": rsA, "rs-b": rsB},

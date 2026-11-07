@@ -584,8 +584,10 @@ func (s *Storage) SetIntrospectionFromToken(ctx context.Context, introspection *
 // the token. The client the token was issued to always may. Otherwise a token
 // without resources stays restricted to its audience (historical behavior),
 // while a token issued for resources requires the caller to be a registered
-// client mapped to one of the token resources through its resource policy: a
-// resource server must never learn about a token issued for another resource.
+// resource server explicitly mapped to one of the token resources through its
+// introspection policy. A grant policy (allowedResources) never confers
+// introspection authority: a regular OAuth client must not learn about
+// another client's token, even for a resource it may itself be granted.
 func (s *Storage) authorizedForToken(clientID string, token *Token) bool {
 	if clientID == token.ApplicationID {
 		return true
@@ -600,7 +602,7 @@ func (s *Storage) authorizedForToken(clientID string, token *Token) bool {
 		return false
 	}
 	for _, resource := range token.Resource {
-		if slices.Contains(client.allowedResources, resource) {
+		if slices.Contains(client.introspectionResources, resource) {
 			return true
 		}
 	}

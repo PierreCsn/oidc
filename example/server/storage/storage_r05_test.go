@@ -33,7 +33,7 @@ func r05Store(policy []string) *Storage {
 	store := NewStorageWithClients(
 		NewUserStore("http://test.example.com"),
 		map[string]*Client{
-			r05rsA: {id: r05rsA, secret: "secret", allowedResources: []string{r05resA}},
+			r05rsA: {id: r05rsA, secret: "secret", introspectionResources: []string{r05resA}},
 		},
 	)
 	store.serviceUsers[r05svc] = &Client{
@@ -63,7 +63,7 @@ func r05DeviceStore(policy []string) *Storage {
 		NewUserStore("http://test.example.com"),
 		map[string]*Client{
 			"device": device,
-			r05rsA:   {id: r05rsA, secret: "secret", allowedResources: []string{r05resA}},
+			r05rsA:   {id: r05rsA, secret: "secret", introspectionResources: []string{r05resA}},
 		},
 	)
 }

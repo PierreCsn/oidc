@@ -37,7 +37,7 @@ func r04Store() *Storage {
 	appA.allowedResources = []string{r04resA}
 	appB := WebClient(r04appB, "secret")
 	appB.allowedResources = []string{r04resA}
-	rsA := &Client{id: r04rsA, secret: "secret", allowedResources: []string{r04resA}}
+	rsA := &Client{id: r04rsA, secret: "secret", introspectionResources: []string{r04resA}}
 	return NewStorageWithClients(
 		NewUserStore("http://test.example.com"),
 		map[string]*Client{r04appA: appA, r04appB: appB, r04rsA: rsA},

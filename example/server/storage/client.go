@@ -45,9 +45,18 @@ type Client struct {
 	// resource_indicators_supported must set an explicit policy on every
 	// client. For a service client it is also the client credentials grant
 	// policy: only those resources may be requested and bound to the access
-	// token audience. For a resource server client it authorizes introspection
-	// of tokens issued for those resources.
+	// token audience. A grant policy never confers introspection authority;
+	// see introspectionResources.
 	allowedResources []string
+
+	// introspectionResources lists the RFC 8707 resource URIs whose tokens
+	// this client may introspect as a resource server, or nil when the
+	// client has no introspection rights. It is deliberately separate from
+	// allowedResources: holding a grant for a resource must not let a
+	// regular OAuth client learn about another client's token. The issuing
+	// client always keeps introspecting its own tokens, and resourceless
+	// tokens keep the historical audience-membership rule.
+	introspectionResources []string
 }
 
 // GetID must return the client_id
