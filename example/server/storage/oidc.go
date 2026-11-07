@@ -367,6 +367,15 @@ func (r *clientCredentialsRequest) SetCurrentResources(resources []string) {
 // GetAccessTokenAudience implements the optional op.AccessTokenAudienceRequest
 // interface. It binds the access token audience to the effective resource
 // selection of the current token request.
+//
+// Maintainer decision (R06): when the token request selects no resource, the
+// full grant policy becomes the default audience (aud=[client,A,B] for a
+// policy of [A,B]), which the strict validator accepts since it exits early
+// on omitted resources. An allowlist is not inherently an all-resources
+// default: a future policy may prefer the legacy [client] audience for
+// resource-less requests, keeping explicit `resource` parameters (as MCP
+// servers send) as the only way to widen the audience. Pinned by
+// TestR06NoResourceCCDefaultAudience; do not change silently.
 func (r *clientCredentialsRequest) GetAccessTokenAudience() []string {
 	effective := r.grantedResources
 	if r.currentResources != nil {
