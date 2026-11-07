@@ -298,6 +298,12 @@ func (s *Storage) CreateAccessToken(ctx context.Context, request op.TokenRequest
 		applicationID = req.ApplicationID
 	case op.TokenExchangeRequest:
 		applicationID = req.GetClientID()
+	case *clientCredentialsRequest:
+		// without the issuing service client, introspection client_id and
+		// revocation cannot work for machine tokens
+		applicationID = req.clientID
+	case *op.DeviceAuthorizationState:
+		applicationID = req.GetClientID()
 	}
 
 	token, err := s.accessToken(applicationID, "", request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request))
@@ -563,9 +569,16 @@ func (s *Storage) SetIntrospectionFromToken(ctx context.Context, introspection *
 	// e.g. the userinfo (equivalent to userinfo endpoint)
 
 	userInfo := new(oidc.UserInfo)
-	err := s.setUserinfo(ctx, userInfo, subject, clientID, token.Scopes)
-	if err != nil {
-		return err
+	if subject == "" || s.userStore.GetUserByID(subject) != nil {
+		if err := s.setUserinfo(ctx, userInfo, subject, clientID, token.Scopes); err != nil {
+			return err
+		}
+	} else {
+		// Machine tokens (client_credentials) are issued to a service client
+		// with no human user record: report the subject without user claims
+		// instead of answering inactive. The userinfo endpoint keeps
+		// requiring a human user through SetUserinfoFromToken.
+		userInfo.Subject = subject
 	}
 	introspection.SetUserInfo(userInfo)
 	//...and also the requested scopes...
@@ -870,6 +883,14 @@ func getInfoFromRequest(req op.TokenRequest) (clientID string, authTime time.Tim
 	refreshReq, ok := req.(*RefreshTokenRequest) // Refresh Token Request
 	if ok {
 		return refreshReq.ApplicationID, refreshReq.AuthTime, refreshReq.AMR
+	}
+	ccReq, ok := req.(*clientCredentialsRequest) // Client Credentials Grant
+	if ok {
+		return ccReq.clientID, time.Time{}, nil
+	}
+	deviceReq, ok := req.(*op.DeviceAuthorizationState) // Device Grant
+	if ok {
+		return deviceReq.GetClientID(), deviceReq.AuthTime, deviceReq.AMR
 	}
 	return "", time.Time{}, nil
 }

@@ -138,6 +138,16 @@ func TestR05ClientCredentialsOpaqueToken(t *testing.T) {
 		_, stillThere := store.tokens[tokenID]
 		assert.False(t, stillThere, "token must be gone after revocation")
 	})
+
+	t.Run("userinfo endpoint still requires a human user", func(t *testing.T) {
+		store := r05Store([]string{r05resA})
+		tokenID, _, err := store.CreateAccessToken(ctx, r05CCRequest(t, store))
+		require.NoError(t, err)
+
+		userInfo := new(oidc.UserInfo)
+		require.Error(t, store.SetUserinfoFromToken(ctx, userInfo, tokenID, r05svc, ""),
+			"only introspection tolerates machine subjects; userinfo keeps failing")
+	})
 }
 
 func TestR05DeviceOpaqueToken(t *testing.T) {
