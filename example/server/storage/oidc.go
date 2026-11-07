@@ -374,6 +374,23 @@ func (r *clientCredentialsRequest) SetCurrentResources(resources []string) {
 	r.currentResources = resources
 }
 
+// machineSubject marks a token request minted for a service client through
+// the client_credentials grant. See machineSubjectRequest.
+func (r *clientCredentialsRequest) machineSubject() {}
+
+// legacyMachineRequest is a resource-unaware client_credentials request for a
+// service client without a resource policy. It embeds the plain token request
+// unchanged (explicit resources keep the legacy ignore-or-strict behavior)
+// and only adds the machine provenance marker plus the issuing client.
+type legacyMachineRequest struct {
+	*oidc.JWTTokenRequest
+	clientID string
+}
+
+// machineSubject marks a token request minted for a service client through
+// the client_credentials grant. See machineSubjectRequest.
+func (r *legacyMachineRequest) machineSubject() {}
+
 // GetAccessTokenAudience implements the optional op.AccessTokenAudienceRequest
 // interface. It binds the access token audience to the effective resource
 // selection of the current token request.

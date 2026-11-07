@@ -302,11 +302,13 @@ func (s *Storage) CreateAccessToken(ctx context.Context, request op.TokenRequest
 		// without the issuing service client, introspection client_id and
 		// revocation cannot work for machine tokens
 		applicationID = req.clientID
+	case *legacyMachineRequest:
+		applicationID = req.clientID
 	case *op.DeviceAuthorizationState:
 		applicationID = req.GetClientID()
 	}
 
-	token, err := s.accessToken(applicationID, "", request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request))
+	token, err := s.accessToken(applicationID, "", request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request), subjectKindForRequest(request))
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -327,7 +329,7 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, request op.T
 	// if currentRefreshToken is empty (Code Flow) we will have to create a new refresh token
 	if currentRefreshToken == "" {
 		refreshTokenID := uuid.NewString()
-		accessToken, err := s.accessToken(applicationID, refreshTokenID, request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request))
+		accessToken, err := s.accessToken(applicationID, refreshTokenID, request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request), subjectKindForRequest(request))
 		if err != nil {
 			return "", "", time.Time{}, err
 		}
@@ -349,7 +351,7 @@ func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, request op.T
 
 	newRefreshToken = uuid.NewString()
 
-	accessToken, err := s.accessToken(applicationID, newRefreshToken, request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request))
+	accessToken, err := s.accessToken(applicationID, newRefreshToken, request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request), subjectKindForRequest(request))
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
@@ -366,7 +368,7 @@ func (s *Storage) exchangeRefreshToken(ctx context.Context, request op.TokenExch
 	authTime := request.GetAuthTime()
 
 	refreshTokenID := uuid.NewString()
-	accessToken, err := s.accessToken(applicationID, refreshTokenID, request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request))
+	accessToken, err := s.accessToken(applicationID, refreshTokenID, request.GetSubject(), op.AccessTokenAudience(request), request.GetScopes(), resourcesFromRequest(request), subjectKindForRequest(request))
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
@@ -569,16 +571,18 @@ func (s *Storage) SetIntrospectionFromToken(ctx context.Context, introspection *
 	// e.g. the userinfo (equivalent to userinfo endpoint)
 
 	userInfo := new(oidc.UserInfo)
-	if subject == "" || s.userStore.GetUserByID(subject) != nil {
-		if err := s.setUserinfo(ctx, userInfo, subject, clientID, token.Scopes); err != nil {
-			return err
-		}
-	} else {
-		// Machine tokens (client_credentials) are issued to a service client
-		// with no human user record: report the subject without user claims
-		// instead of answering inactive. The userinfo endpoint keeps
-		// requiring a human user through SetUserinfoFromToken.
+	if token.SubjectKind == SubjectMachine && subject != "" {
+		// Machine tokens are issued to a service client with no human user
+		// record: report the subject without user claims. The kind was
+		// recorded at issuance, so a service ID colliding with a human ID
+		// can never leak personal data (A02).
 		userInfo.Subject = subject
+	} else if err := s.setUserinfo(ctx, userInfo, subject, clientID, token.Scopes); err != nil {
+		// Recorded-human tokens (and legacy records without a kind) fail
+		// closed when the user no longer exists. This is the example's
+		// explicit deleted-user policy for introspection, not a general
+		// revocation rule: the token record itself is untouched.
+		return err
 	}
 	introspection.SetUserInfo(userInfo)
 	//...and also the requested scopes...
@@ -693,6 +697,7 @@ func (s *Storage) createRefreshToken(accessToken *Token, amr []string, authTime 
 		Scopes:        accessToken.Scopes,
 		AccessToken:   accessToken.ID,
 		Resource:      grantedResources,
+		SubjectKind:   accessToken.SubjectKind,
 	}
 	s.refreshTokens[token.ID] = token
 	return token.Token, nil
@@ -729,8 +734,30 @@ func (s *Storage) renewRefreshToken(currentRefreshToken, newRefreshToken, newAcc
 	return nil
 }
 
+// machineSubjectRequest is implemented by token requests minted for a service
+// client through the client_credentials grant, with or without a resource
+// policy. It records machine provenance independently of resource awareness.
+type machineSubjectRequest interface {
+	op.TokenRequest
+	machineSubject()
+}
+
+// subjectKindForRequest determines the trusted subject provenance of a token
+// at issuance: requests minted for a service client are machines, refresh
+// requests inherit the kind of the persisted grant, and every other grant
+// (code, device, exchange) carries a human subject.
+func subjectKindForRequest(request op.TokenRequest) SubjectKind {
+	if _, ok := request.(machineSubjectRequest); ok {
+		return SubjectMachine
+	}
+	if refreshReq, ok := request.(*RefreshTokenRequest); ok && refreshReq.SubjectKind == SubjectMachine {
+		return SubjectMachine
+	}
+	return SubjectHuman
+}
+
 // accessToken will store an access_token in-memory based on the provided information
-func (s *Storage) accessToken(applicationID, refreshTokenID, subject string, audience, scopes, resources []string) (*Token, error) {
+func (s *Storage) accessToken(applicationID, refreshTokenID, subject string, audience, scopes, resources []string, subjectKind SubjectKind) (*Token, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	token := &Token{
@@ -742,6 +769,7 @@ func (s *Storage) accessToken(applicationID, refreshTokenID, subject string, aud
 		Expiration:     time.Now().Add(5 * time.Minute),
 		Scopes:         scopes,
 		Resource:       resources,
+		SubjectKind:    subjectKind,
 	}
 	s.tokens[token.ID] = token
 	return token, nil
@@ -887,6 +915,10 @@ func getInfoFromRequest(req op.TokenRequest) (clientID string, authTime time.Tim
 	ccReq, ok := req.(*clientCredentialsRequest) // Client Credentials Grant
 	if ok {
 		return ccReq.clientID, time.Time{}, nil
+	}
+	legacyReq, ok := req.(*legacyMachineRequest) // Client Credentials Grant without resource policy
+	if ok {
+		return legacyReq.clientID, time.Time{}, nil
 	}
 	deviceReq, ok := req.(*op.DeviceAuthorizationState) // Device Grant
 	if ok {
@@ -1052,7 +1084,8 @@ func (s *Storage) ClientCredentialsTokenRequest(ctx context.Context, clientID st
 	// grant, so token requests for its resources can be checked and bound.
 	// Without a policy the request stays resource-unaware: an explicit
 	// resource is then ignored for backwards compatibility, or rejected when
-	// the provider advertises support and enforces strictly.
+	// the provider advertises support and enforces strictly. Both request
+	// types are machine-marked so the issued token records its provenance.
 	if client.allowedResources != nil {
 		return &clientCredentialsRequest{
 			clientID:         clientID,
@@ -1061,9 +1094,12 @@ func (s *Storage) ClientCredentialsTokenRequest(ctx context.Context, clientID st
 		}, nil
 	}
 
-	return &oidc.JWTTokenRequest{
-		Subject:  client.id,
-		Audience: []string{clientID},
-		Scopes:   scopes,
+	return &legacyMachineRequest{
+		JWTTokenRequest: &oidc.JWTTokenRequest{
+			Subject:  client.id,
+			Audience: []string{clientID},
+			Scopes:   scopes,
+		},
+		clientID: clientID,
 	}, nil
 }
