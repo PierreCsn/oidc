@@ -119,6 +119,14 @@ func createDeviceAuthorization(ctx context.Context, req *oidc.DeviceAuthorizatio
 		err = storage.StoreDeviceAuthorization(ctx, clientID, deviceCode, userCode, expires, req.Scopes)
 	}
 	if err != nil {
+		// A storage refusal already described by an OAuth error (such as
+		// invalid_target for a resource outside the client policy) must keep
+		// its type so the HTTP layer maps it to the status the standard
+		// specifies. Only genuine internal failures default to 500.
+		var oidcErr *oidc.Error
+		if errors.As(err, &oidcErr) {
+			return nil, err
+		}
 		return nil, NewStatusError(err, http.StatusInternalServerError)
 	}
 

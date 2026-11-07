@@ -174,7 +174,12 @@ func (s *LegacyServer) DeviceAuthorization(ctx context.Context, r *ClientRequest
 
 	response, err := createDeviceAuthorization(ctx, r.Data, r.Client.GetID(), s.provider)
 	if err != nil {
-		return nil, AsStatusError(err, http.StatusInternalServerError)
+		// Return the error unwrapped, like DeviceToken does: OAuth errors
+		// (invalid_target, invalid_request, ...) map to the status the
+		// standard specifies, while internal failures still surface as 500
+		// through WriteError. Forcing 500 here would misreport every OAuth
+		// refusal from createDeviceAuthorization.
+		return nil, err
 	}
 	return NewResponse(response), nil
 }
