@@ -279,9 +279,19 @@ func (r *RefreshTokenRequest) GetAudience() []string {
 
 // GetAccessTokenAudience implements the optional op.AccessTokenAudienceRequest
 // interface. It binds the access token audience to the effective resource
-// selection of the current token request.
+// selection of the current token request. When no resource indicators are in
+// play (no granted resources and no current selection), it preserves the
+// stored audience so that refresh tokens granted before RFC 8707 keep their
+// historical access audience (A01). Requesting any resource on such a grant
+// stays refused by validation, so this preserves but never extends.
 func (r *RefreshTokenRequest) GetAccessTokenAudience() []string {
-	return audienceFromResources(r.ApplicationID, r.effectiveResources())
+	if r.currentResources != nil || len(r.Resource) > 0 {
+		return audienceFromResources(r.ApplicationID, r.effectiveResources())
+	}
+	if len(r.Audience) > 0 {
+		return slices.Clone(r.Audience)
+	}
+	return []string{r.ApplicationID}
 }
 
 // effectiveResources returns the narrowed `resource` selection of the current
