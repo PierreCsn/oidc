@@ -35,12 +35,18 @@ type Client struct {
 	postLogoutRedirectURIGlobs     []string
 	redirectURIGlobs               []string
 
-	// allowedResources lists the RFC 8707 resource URIs this client is
-	// associated with, or nil when the client has no resource policy. For a
-	// service client it is the client credentials grant policy: only those
-	// resources may be requested and bound to the access token audience. For
-	// a resource server client it authorizes introspection of tokens issued
-	// for those resources.
+	// allowedResources lists the RFC 8707 resource URIs this client may be
+	// granted, or nil when the client has no resource policy. A non-nil policy
+	// is enforced before the grant is persisted (CreateAuthRequest and
+	// StoreDeviceAuthorizationWithResources): requested resources outside it
+	// are rejected with `invalid_target` and persist nothing, while an
+	// explicitly empty policy grants nothing. A nil policy leaves requests
+	// unchecked (legacy): deployments advertising
+	// resource_indicators_supported must set an explicit policy on every
+	// client. For a service client it is also the client credentials grant
+	// policy: only those resources may be requested and bound to the access
+	// token audience. For a resource server client it authorizes introspection
+	// of tokens issued for those resources.
 	allowedResources []string
 }
 

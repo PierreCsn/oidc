@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -172,6 +173,11 @@ func (s *Storage) CheckUsernamePasswordSimple(username, password string) error {
 
 // CreateAuthRequest implements the op.Storage interface
 // it will be called after parsing and validation of the authentication request
+//
+// The requested RFC 8707 resources are checked against the client's policy
+// before they are persisted as the grant (see checkClientResources): anything
+// outside an explicit policy is rejected with `invalid_target` and persists
+// nothing.
 func (s *Storage) CreateAuthRequest(ctx context.Context, authReq *oidc.AuthRequest, userID string) (op.AuthRequest, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -180,6 +186,14 @@ func (s *Storage) CreateAuthRequest(ctx context.Context, authReq *oidc.AuthReque
 		// With prompt=none, there is no way for the user to log in
 		// so return error right away.
 		return nil, oidc.ErrLoginRequired()
+	}
+
+	// The library validates the client before calling into storage, so an
+	// unknown client here is out of contract and left unchecked.
+	if client, ok := s.clients[authReq.ClientID]; ok {
+		if err := checkClientResources(client, []string(authReq.Resource)); err != nil {
+			return nil, err
+		}
 	}
 
 	// typically, you'll fill your storage / storage model with the information of the passed object
@@ -193,6 +207,28 @@ func (s *Storage) CreateAuthRequest(ctx context.Context, authReq *oidc.AuthReque
 
 	// finally, return the request (which implements the AuthRequest interface of the OP
 	return request, nil
+}
+
+// checkClientResources enforces the RFC 8707 resource policy of client: every
+// requested resource must be listed in the client's allowedResources, otherwise
+// an `invalid_target` error is returned and the caller must persist nothing.
+// A nil policy means the client has no policy and leaves requests unchecked
+// (legacy, see Client.allowedResources). Requests without resources always pass.
+//
+// Enforcement intentionally stays inside the example storage: the check needs
+// only storage-local policy data, and the op package already provides the
+// token-time subset machinery, so no new (optional) public interface is added.
+func checkClientResources(client *Client, requested []string) error {
+	if client.allowedResources == nil {
+		return nil
+	}
+	for _, resource := range requested {
+		if !slices.Contains(client.allowedResources, resource) {
+			return oidc.ErrInvalidTarget().
+				WithDescription("resource %q is not allowed for this client", resource)
+		}
+	}
+	return nil
 }
 
 // AuthRequestByID implements the op.Storage interface
@@ -842,8 +878,16 @@ func (s *Storage) StoreDeviceAuthorizationWithResources(ctx context.Context, cli
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if _, ok := s.clients[clientID]; !ok {
+	client, ok := s.clients[clientID]
+	if !ok {
 		return errors.New("client not found")
+	}
+
+	// Same authorize-time policy check as CreateAuthRequest, before persisting
+	// the grant: anything outside an explicit policy is rejected with
+	// `invalid_target` and persists no device state.
+	if err := checkClientResources(client, resources); err != nil {
+		return err
 	}
 
 	if _, ok := s.userCodes[userCode]; ok {

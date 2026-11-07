@@ -379,9 +379,10 @@ func (r *clientCredentialsRequest) GetAccessTokenAudience() []string {
 // an issued access token to the resource indicators of [RFC 8707] the client asked
 // for.
 //
-// The client_id is always kept alongside the resources. A real implementation
-// would first check the requested resources against a policy of the client, and
-// would likely restrict the audience of the access token to the resources alone.
+// The client_id is always kept alongside the resources. The example storage
+// checks the requested resources against the client policy before persisting
+// the grant (see checkClientResources); a real implementation would likely
+// also restrict the audience of the access token to the resources alone.
 // ID tokens are not affected: they stay addressed to the client, see GetAudience.
 //
 // [RFC 8707]: https://www.rfc-editor.org/rfc/rfc8707
