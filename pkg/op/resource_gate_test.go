@@ -17,6 +17,11 @@ func (silentProvider) ResourceIndicatorsSupported() bool { return false }
 
 type legacyProvider struct{}
 
+// gateCapableRequest implements the full strict-gate contract (grant report,
+// narrowed-selection setter, access audience report). "Capable" means
+// interface presence only: it deliberately binds the produced audience to
+// the client alone, so it is also the R03 fixture for the documented F06
+// honesty limit (see resource_r03_test.go).
 type gateCapableRequest struct {
 	granted []string
 	current []string
