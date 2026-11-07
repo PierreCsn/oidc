@@ -3,6 +3,8 @@
 # manually via workflow_dispatch only; NOT part of the contribution.
 name: Prep branch test
 on:
+  push:
+    branches: [pierre/pr-955-draft-prep-ci]
   workflow_dispatch:
 permissions:
   contents: read
