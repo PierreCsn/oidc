@@ -128,7 +128,11 @@ func TestR05ClientCredentialsOpaqueToken(t *testing.T) {
 		}
 	})
 
-	t.Run("issuing service client can revoke its token", func(t *testing.T) {
+	t.Run("issuing service client can revoke its token (storage layer)", func(t *testing.T) {
+		// Storage-layer proof only: end-to-end HTTP revocation by a
+		// service-only client is blocked by the inherited clients vs
+		// serviceUsers registry split, pinned in TestA03 (A03). Do not
+		// claim working HTTP machine revocation from this subtest.
 		store := r05Store([]string{r05resA})
 		tokenID, _, err := store.CreateAccessToken(ctx, r05CCRequest(t, store))
 		require.NoError(t, err)
