@@ -1,0 +1,24 @@
+# Scratch CI for the RFC 8707 adversarial-fixes branch: runs the same four
+# Go validations locally required before any upstream publication.
+# Triggered on push to this validation branch only; NOT part of the
+# contribution.
+name: Adversarial branch test
+on:
+  push:
+    branches: [pierre/pr-955-adversarial-ci]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.25'
+      - run: go vet ./...
+      - run: go test -count=1 ./...
+      - run: go test -race -count=1 -coverpkg=./pkg/... ./pkg/...
+      - run: go test -race -count=1 ./example/server/storage/
